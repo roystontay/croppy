@@ -137,10 +137,14 @@ class _ResizeGestureDetector extends StatefulWidget {
 
 class _ResizeGestureDetectorState extends State<_ResizeGestureDetector> {
   void _onPanStart(DragStartDetails details) {
+    // print(
+    //     'ResizeGestureDetector: onPanStart triggered with details: ${details.globalPosition}.');
     widget.controller.onResizeStart();
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
+    // print(
+    // 'ResizeGestureDetector: onPanUpdate triggered with delta: ${details.delta}.');
     widget.controller.onResize(
       offsetDelta: -details.delta,
       direction: widget.direction,
@@ -148,6 +152,7 @@ class _ResizeGestureDetectorState extends State<_ResizeGestureDetector> {
   }
 
   void _onPanEnd() {
+    // print('ResizeGestureDetector: onPanEnd triggered.');
     widget.controller.onResizeEnd();
   }
 
@@ -157,14 +162,102 @@ class _ResizeGestureDetectorState extends State<_ResizeGestureDetector> {
       Transformation.resize,
     );
 
-    return GestureDetector(
+    return RawGestureDetector(
       behavior: HitTestBehavior.opaque,
-      dragStartBehavior: DragStartBehavior.down,
-      onPanStart: isEnabled ? _onPanStart : null,
-      onPanUpdate: isEnabled ? _onPanUpdate : null,
-      onPanEnd: isEnabled ? (_) => _onPanEnd() : null,
-      onPanCancel: isEnabled ? _onPanEnd : null,
+      gestures: {
+        CustomPanGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<CustomPanGestureRecognizer>(
+          () => CustomPanGestureRecognizer(
+              dragStartBehavior:
+                  DragStartBehavior.down), // Specify dragStartBehavior
+          (CustomPanGestureRecognizer instance) {
+            if (isEnabled) {
+              instance.onPanStart = _onPanStart;
+              instance.onPanUpdate = _onPanUpdate;
+              instance.onPanEnd = _onPanEnd;
+              instance.onPanCancel =
+                  _onPanEnd; // Use the same callback for cancel
+            } else {
+              instance.onPanStart = null;
+              instance.onPanUpdate = null;
+              instance.onPanEnd = null;
+              instance.onPanCancel = null;
+            }
+          },
+        ),
+      },
       child: const SizedBox.expand(),
     );
+  }
+}
+
+class CustomPanGestureRecognizer extends OneSequenceGestureRecognizer {
+  CustomPanGestureRecognizer({
+    Object? debugOwner,
+    this.dragStartBehavior = DragStartBehavior.start,
+  }) : super(debugOwner: debugOwner);
+
+  final DragStartBehavior dragStartBehavior;
+
+  Function(DragStartDetails)? onPanStart;
+  Function(DragUpdateDetails)? onPanUpdate;
+  Function()? onPanEnd;
+  Function()? onPanCancel;
+
+  Offset? initialPosition;
+  Offset? lastPosition;
+
+  @override
+  void addPointer(PointerEvent event) {
+    startTrackingPointer(event.pointer);
+    resolve(GestureDisposition.accepted);
+    if (dragStartBehavior == DragStartBehavior.down) {
+      onPanStart?.call(DragStartDetails(globalPosition: event.position));
+      lastPosition = event.position; // Initialize last position
+    } else {
+      initialPosition = event.position;
+    }
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      if (dragStartBehavior == DragStartBehavior.start &&
+          initialPosition != null) {
+        onPanStart?.call(DragStartDetails(globalPosition: initialPosition!));
+        lastPosition = initialPosition; // Initialize last position
+        initialPosition = null;
+      }
+
+      // Calculate delta
+      final delta = event.position - (lastPosition ?? event.position);
+      lastPosition = event.position;
+
+      // print('CustomPanGestureRecognizer: Calculated delta: $delta');
+      onPanUpdate?.call(DragUpdateDetails(
+        globalPosition: event.position,
+        delta: delta,
+      ));
+    } else if (event is PointerDownEvent &&
+        dragStartBehavior == DragStartBehavior.down) {
+      onPanStart?.call(DragStartDetails(globalPosition: event.position));
+      lastPosition = event.position; // Initialize last position
+    } else if (event is PointerUpEvent) {
+      onPanEnd?.call();
+      stopTrackingPointer(event.pointer);
+      lastPosition = null; // Reset
+    } else if (event is PointerCancelEvent) {
+      onPanCancel?.call();
+      stopTrackingPointer(event.pointer);
+      lastPosition = null; // Reset
+    }
+  }
+
+  @override
+  String get debugDescription => 'customPan';
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    // print('CustomPanGestureRecognizer: Stopped tracking pointer $pointer.');
   }
 }
